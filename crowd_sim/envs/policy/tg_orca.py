@@ -6,9 +6,8 @@ from crowd_sim.envs.utils.action import ActionXY
 class TG_ORCA(Policy):
     def __init__(self):
         super().__init__()
+        self.name = 'TG_ORCA'
         self.trainable = False
-        self.kinematics = 'holonomic'
-        self.multiagent_training = True
 
     def configure(self, config):
         assert True
