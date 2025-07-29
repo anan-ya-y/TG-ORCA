@@ -284,12 +284,14 @@ class CrowdSim(gym.Env):
             else:
                 assert phase == 'test'
                 if self.case_counter[phase] == -1:
-                    # for debugging purposes
-                    self.human_num = 3
-                    self.humans = [Human(self.config, 'humans') for _ in range(self.human_num)]
-                    self.humans[0].set(0, -6, 0, 5, 0, 0, np.pi / 2)
-                    self.humans[1].set(-5, -5, -5, 5, 0, 0, np.pi / 2)
-                    self.humans[2].set(5, -5, 5, 5, 0, 0, np.pi / 2)
+                    self.human_num = 3  # or however many obstacles you want
+                    self.humans = []
+                    obstacle_positions = [(1,0), (0,0), (-1, 0)]  # Example: two obstacles
+                    #obstacle_positions = [(1.5, 0), (-1.5, 0)]
+                    for px, py in obstacle_positions:
+                        human = Human(self.config, 'humans')
+                        human.set(px, py, px, py, 0, 0, 0)  # start == goal, zero velocity
+                        self.humans.append(human)
                 else:
                     raise NotImplementedError
 
