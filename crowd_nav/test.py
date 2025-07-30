@@ -27,6 +27,7 @@ def main():
     parser.add_argument('--circle', default=False, action='store_true')
     parser.add_argument('--video_file', type=str, default=None)
     parser.add_argument('--traj', default=False, action='store_true')
+    parser.add_argument('--log_file', type=str, default=None, help='CSV/JSON file to append per‑episode results')
     args = parser.parse_args()
 
     if args.model_dir is not None:
@@ -71,7 +72,7 @@ def main():
     robot = Robot(env_config, 'robot')
     robot.set_policy(policy)
     env.set_robot(robot)
-    explorer = Explorer(env, robot, device, gamma=0.9)
+    explorer = Explorer(env, robot, device, gamma=0.9, log_file=args.log_file)
 
     policy.set_phase(args.phase)
     policy.set_device(device)

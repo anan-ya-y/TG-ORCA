@@ -1,11 +1,19 @@
 import logging
 import copy
+import csv
+import json
+import pathlib
+import numpy as np
+from typing import Optional
 import torch
 from crowd_sim.envs.utils.info import *
 
 
 class Explorer(object):
-    def __init__(self, env, robot, device, memory=None, gamma=None, target_policy=None):
+    def __init__(
+            self, env, robot, device,
+            memory=None, gamma=None, target_policy=None,
+            log_file: Optional[str] = None):
         self.env = env
         self.robot = robot
         self.device = device
@@ -14,8 +22,61 @@ class Explorer(object):
         self.target_policy = target_policy
         self.target_model = None
 
+        self.log_file = pathlib.Path(log_file) if log_file else None
+        if self.log_file:
+            self.log_file.parent.mkdir(parents=True, exist_ok=True)
+            # create file + header only once
+            if not self.log_file.exists():
+                with self.log_file.open("w", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=[
+                        "episode", "phase", "result", "nav_time",
+                        # ORCA params
+                        "neighbor_dist", "max_neighbors",
+                        "time_horizon", "time_horizon_obst",
+                        "radius", "max_speed",
+                        # initial robot state
+                        "px", "py", "gx", "gy", "v_pref", "theta",
+                        # raw JointState snapshot (json‑encoded for reproducibility)
+                        "raw_state"
+                    ])
+                    writer.writeheader()
+
     def update_target_model(self, target_model):
         self.target_model = copy.deepcopy(target_model)
+
+    @staticmethod
+    def _json_default(obj):
+        if isinstance(obj, (np.floating, np.integer)):
+            return obj.item()          # plain int/float
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return str(obj)                # fallback
+
+    def _dump_episode(self, episode_idx, phase, result, nav_time, init_state):
+        """Write one row of data if logging is enabled."""
+        if not self.log_file:
+            return
+
+        rob = init_state.self_state
+        params = self.robot.policy   # ORCA instance
+        record = dict(
+            episode=episode_idx,
+            phase=phase,
+            result=result,
+            nav_time=nav_time,
+            neighbor_dist=params.neighbor_dist,
+            max_neighbors=params.max_neighbors,
+            time_horizon=params.time_horizon,
+            time_horizon_obst=params.time_horizon_obst,
+            radius=params.radius,
+            max_speed=params.max_speed,
+            px=rob.px, py=rob.py, gx=rob.gx, gy=rob.gy,
+            v_pref=rob.v_pref, theta=rob.theta,
+            raw_state=json.dumps(init_state.__dict__, default=self._json_default)
+        )
+        with self.log_file.open("a", newline="") as f:
+            csv.DictWriter(f, record.keys()).writerow(record)
+
 
     # @profile
     def run_k_episodes(self, k, phase, update_memory=False, imitation_learning=False, episode=None,
@@ -40,6 +101,7 @@ class Explorer(object):
             rewards = []
             while not done:
                 action = self.robot.act(ob)
+                init_state = copy.deepcopy(ob)  # snapshot for logging
                 ob, reward, done, info = self.env.step(action)
                 states.append(self.robot.policy.last_state)
                 actions.append(action)
@@ -62,6 +124,12 @@ class Explorer(object):
                 timeout_times.append(self.env.time_limit)
             else:
                 raise ValueError('Invalid end signal from environment')
+
+            # --- write one CSV row ----------------------------------- #
+            tag = "success" if isinstance(info, ReachGoal) else \
+                  "collision" if isinstance(info, Collision) else "timeout"
+            # states[0] is the initial JointState recorded inside the episode
+            self._dump_episode(i, phase, tag, self.env.global_time, states[0])
 
             if update_memory:
                 if isinstance(info, ReachGoal) or isinstance(info, Collision):
